@@ -1,11 +1,13 @@
 # free-code
 
+> This public repository is an independently published fork of [paoloanzn/free-code](https://github.com/paoloanzn/free-code) and keeps that source attribution explicit here.
+
 **The free build of Claude Code.**
 
 All telemetry stripped. All injected security-prompt guardrails removed. All experimental features unlocked. One binary, zero callbacks home.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/paoloanzn/free-code/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/win4r/free-code/main/install.sh | bash
 ```
 
 > Checks your system, installs Bun if needed, clones, builds with all features enabled, and puts `free-code` on your PATH. Then just `export ANTHROPIC_API_KEY="sk-ant-..."` and run `free-code`.
@@ -70,7 +72,7 @@ See [FEATURES.md](FEATURES.md) for the full audit of all 88 flags and their stat
 ## Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/paoloanzn/free-code/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/win4r/free-code/main/install.sh | bash
 ```
 
 This will check your system, install Bun if needed, clone the repo, build the binary with all experimental features enabled, and symlink it as `free-code` on your PATH.
@@ -100,8 +102,8 @@ curl -fsSL https://bun.sh/install | bash
 
 ```bash
 # Clone the repo
-git clone https://github.com/paoloanzn/claude-code.git
-cd claude-code
+git clone https://github.com/win4r/free-code.git
+cd free-code
 
 # Install dependencies
 bun install
