@@ -10,6 +10,17 @@ free-code 是 Anthropic **Claude Code** CLI 的一个独立 fork 版本（v2.1.8
 
 ---
 
+## 本地增强
+
+除去上面的“去遥测 / 去护栏 / 开实验特性”之外，这份本地分支还额外补了几类日常可见行为：
+
+- 面向 `codex2gpt` 之类 Anthropic 兼容代理时，`/model` 会按当前模型族展示 GPT 或 Claude 选项，`/effort` 会弹出独立选择器，`/fast` 会映射到代理的 fast mode 语义
+- `gpt-5.4` / `gpt-5.4-1m` 支持 `extra-high` effort，并在状态栏、命令补全、headless 元数据里反映真实可用等级
+- 在回答收尾阶段，如果只剩最后一个 `in_progress` task / todo 未关闭，会自动提醒模型先完成任务状态更新，减少任务清单残留
+- 开启 `BUDDY` feature flag 时，增加 `/buddy` 命令，可执行 hatch、info、pet、mute、rename 等交互
+
+---
+
 ## 技术栈
 
 | 技术 | 用途 |

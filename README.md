@@ -198,6 +198,14 @@ In that mode:
 
 If your proxy normalizes Anthropic effort values for OpenAI Responses-compatible backends, `extra-high` can be carried across cleanly as the upstream `xhigh` tier.
 
+### Additional local CLI behavior
+
+This fork also includes a few quality-of-life changes beyond the proxy-facing GPT work:
+
+- task finalization reminders now catch the common "last item left in progress" case for both TaskV2 and legacy TodoWrite flows, reducing stale task lists at the end of a response
+- headless / SDK-style output now reports supported effort levels from the active model instead of assuming a fixed Claude-only tier list
+- a `/buddy` command is available when the `BUDDY` feature flag is enabled, with hatch, info, pet, mute, and rename actions for the built-in companion system
+
 ---
 
 ## Project structure
