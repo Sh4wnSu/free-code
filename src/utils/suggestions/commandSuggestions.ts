@@ -93,6 +93,28 @@ function isCommandMetadata(metadata: unknown): metadata is Command {
   )
 }
 
+export type CommandArgumentSuggestionMetadata = {
+  kind: 'command-argument'
+  replacementInput: string
+  submitInput: string
+}
+
+function isCommandArgumentSuggestionMetadata(
+  metadata: unknown,
+): metadata is CommandArgumentSuggestionMetadata {
+  return (
+    typeof metadata === 'object' &&
+    metadata !== null &&
+    'kind' in metadata &&
+    (metadata as { kind: unknown }).kind === 'command-argument' &&
+    'replacementInput' in metadata &&
+    typeof (metadata as { replacementInput: unknown }).replacementInput ===
+      'string' &&
+    'submitInput' in metadata &&
+    typeof (metadata as { submitInput: unknown }).submitInput === 'string'
+  )
+}
+
 /**
  * Represents a slash command found mid-input (not at the start)
  */
@@ -508,6 +530,19 @@ export function applyCommandSuggestion(
   setCursorOffset: (offset: number) => void,
   onSubmit: (value: string, isSubmittingSlashCommand?: boolean) => void,
 ): void {
+  if (
+    typeof suggestion !== 'string' &&
+    isCommandArgumentSuggestionMetadata(suggestion.metadata)
+  ) {
+    const { replacementInput, submitInput } = suggestion.metadata
+    onInputChange(replacementInput)
+    setCursorOffset(replacementInput.length)
+    if (shouldExecute) {
+      onSubmit(submitInput, /* isSubmittingSlashCommand */ true)
+    }
+    return
+  }
+
   // Extract command name and object from string or SuggestionItem metadata
   let commandName: string
   let commandObj: Command | undefined

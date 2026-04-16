@@ -451,8 +451,8 @@ function configureEffortParams(
   if (effortValue === undefined) {
     betas.push(EFFORT_BETA_HEADER)
   } else if (typeof effortValue === 'string') {
-    // Send string effort level as is
-    outputConfig.effort = effortValue
+    // GPT-facing extra-high maps to the Responses proxy's xhigh effort.
+    outputConfig.effort = effortValue === 'extra-high' ? 'xhigh' : effortValue
     betas.push(EFFORT_BETA_HEADER)
   } else if (process.env.USER_TYPE === 'ant') {
     // Numeric effort override - ant-only (uses anthropic_internal)

@@ -4,11 +4,11 @@ import * as React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { useExitOnCtrlCDWithKeybindings } from 'src/hooks/useExitOnCtrlCDWithKeybindings.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
-import { FAST_MODE_MODEL_DISPLAY, isFastModeAvailable, isFastModeCooldown, isFastModeEnabled } from 'src/utils/fastMode.js';
+import { getFastModeModelDisplay, isFastModeAvailable, isFastModeCooldown, isFastModeEnabled } from 'src/utils/fastMode.js';
 import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getDefaultEffortForModel, getSupportedEffortLevels, modelSupportsEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel } from '../utils/model/model.js';
 import { getModelOptions } from '../utils/model/modelOptions.js';
 import { getSettingsForSource, updateSettingsForSource } from '../utils/settings/settings.js';
@@ -64,10 +64,10 @@ export function ModelPicker(t0) {
     t1 = $[1];
   }
   const [effort, setEffort] = useState(t1);
-  const t2 = isFastMode ?? false;
+  const t2 = `${String(isFastMode ?? false)}::${sessionModel ?? initial ?? '__DEFAULT__'}`;
   let t3;
   if ($[2] !== t2) {
-    t3 = getModelOptions(t2);
+    t3 = getModelOptions(isFastMode ?? false, sessionModel ?? initial);
     $[2] = t2;
     $[3] = t3;
   } else {
@@ -149,7 +149,7 @@ export function ModelPicker(t0) {
   if ($[20] !== focusedValue) {
     const focusedModel = resolveOptionModel(focusedValue);
     focusedSupportsEffort = focusedModel ? modelSupportsEffort(focusedModel) : false;
-    t8 = focusedModel ? modelSupportsMaxEffort(focusedModel) : false;
+    t8 = focusedModel ? getSupportedEffortLevels(focusedModel) : [];
     $[20] = focusedValue;
     $[21] = focusedSupportsEffort;
     $[22] = t8;
@@ -157,7 +157,7 @@ export function ModelPicker(t0) {
     focusedSupportsEffort = $[21];
     t8 = $[22];
   }
-  const focusedSupportsMax = t8;
+  const focusedSupportedLevels = t8;
   let t9;
   if ($[23] !== focusedValue) {
     t9 = getDefaultEffortLevelForOption(focusedValue);
@@ -167,7 +167,7 @@ export function ModelPicker(t0) {
     t9 = $[24];
   }
   const focusedDefaultEffort = t9;
-  const displayEffort = effort === "max" && !focusedSupportsMax ? "high" : effort;
+  const displayEffort = normalizeEffortLevelForModel(resolveOptionModel(focusedValue), effort);
   let t10;
   if ($[25] !== effortValue || $[26] !== hasToggledEffort) {
     t10 = value => {
@@ -184,17 +184,17 @@ export function ModelPicker(t0) {
   }
   const handleFocus = t10;
   let t11;
-  if ($[28] !== focusedDefaultEffort || $[29] !== focusedSupportsEffort || $[30] !== focusedSupportsMax) {
+  if ($[28] !== focusedDefaultEffort || $[29] !== focusedSupportedLevels || $[30] !== focusedSupportsEffort) {
     t11 = direction => {
       if (!focusedSupportsEffort) {
         return;
       }
-      setEffort(prev => cycleEffortLevel(prev ?? focusedDefaultEffort, direction, focusedSupportsMax));
+      setEffort(prev => cycleEffortLevel(prev ?? focusedDefaultEffort, direction, focusedSupportedLevels));
       setHasToggledEffort(true);
     };
     $[28] = focusedDefaultEffort;
-    $[29] = focusedSupportsEffort;
-    $[30] = focusedSupportsMax;
+    $[29] = focusedSupportedLevels;
+    $[30] = focusedSupportsEffort;
     $[31] = t11;
   } else {
     t11 = $[31];
@@ -227,8 +227,10 @@ export function ModelPicker(t0) {
       logEvent("tengu_model_command_menu_effort", {
         effort: effort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
+      const selectedModel = resolveOptionModel(value_0);
+      const normalizedEffort = normalizeEffortLevelForModel(selectedModel, effort);
       if (!skipSettingsWrite) {
-        const effortLevel = resolvePickerEffortPersistence(effort, getDefaultEffortLevelForOption(value_0), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
+        const effortLevel = resolvePickerEffortPersistence(normalizedEffort, getDefaultEffortLevelForOption(value_0), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
         const persistable = toPersistableEffort(effortLevel);
         if (persistable !== undefined) {
           updateSettingsForSource("userSettings", {
@@ -240,8 +242,7 @@ export function ModelPicker(t0) {
           effortValue: effortLevel
         }));
       }
-      const selectedModel = resolveOptionModel(value_0);
-      const selectedEffort = hasToggledEffort && selectedModel && modelSupportsEffort(selectedModel) ? effort : undefined;
+      const selectedEffort = hasToggledEffort && selectedModel && modelSupportsEffort(selectedModel) ? normalizedEffort : undefined;
       if (value_0 === NO_PREFERENCE) {
         onSelect(null, selectedEffort);
         return;
@@ -265,7 +266,7 @@ export function ModelPicker(t0) {
   } else {
     t15 = $[41];
   }
-  const t16 = headerText ?? "Switch between Claude models. Applies to this session and future Claude Code sessions. For other/previous model names, specify with --model.";
+  const t16 = headerText ?? "Switch between available models. Applies to this session and future Claude Code sessions. For other/previous model IDs, specify with --model.";
   let t17;
   if ($[42] !== t16) {
     t17 = <Text dimColor={true}>{t16}</Text>;
@@ -335,9 +336,9 @@ export function ModelPicker(t0) {
     t24 = $[66];
   }
   let t25;
-  if ($[67] !== showFastModeNotice) {
-    t25 = isFastModeEnabled() ? showFastModeNotice ? <Box marginBottom={1}><Text dimColor={true}>Fast mode is <Text bold={true}>ON</Text> and available with{" "}{FAST_MODE_MODEL_DISPLAY} only (/fast). Switching to other models turn off fast mode.</Text></Box> : isFastModeAvailable() && !isFastModeCooldown() ? <Box marginBottom={1}><Text dimColor={true}>Use <Text bold={true}>/fast</Text> to turn on Fast mode ({FAST_MODE_MODEL_DISPLAY} only).</Text></Box> : null : null;
-    $[67] = showFastModeNotice;
+  if ($[67] !== `${String(showFastModeNotice)}::${sessionModel ?? initial ?? '__DEFAULT__'}`) {
+    t25 = isFastModeEnabled() ? showFastModeNotice ? <Box marginBottom={1}><Text dimColor={true}>Fast mode is <Text bold={true}>ON</Text> and available with{" "}{getFastModeModelDisplay(sessionModel ?? initial)} only (/fast). Switching to other models turn off fast mode.</Text></Box> : isFastModeAvailable() && !isFastModeCooldown() ? <Box marginBottom={1}><Text dimColor={true}>Use <Text bold={true}>/fast</Text> to turn on Fast mode ({getFastModeModelDisplay(sessionModel ?? initial)} only).</Text></Box> : null : null;
+    $[67] = `${String(showFastModeNotice)}::${sessionModel ?? initial ?? '__DEFAULT__'}`;
     $[68] = t25;
   } else {
     t25 = $[68];
@@ -428,8 +429,8 @@ function EffortLevelIndicator(t0) {
   }
   return t4;
 }
-function cycleEffortLevel(current: EffortLevel, direction: 'left' | 'right', includeMax: boolean): EffortLevel {
-  const levels: EffortLevel[] = includeMax ? ['low', 'medium', 'high', 'max'] : ['low', 'medium', 'high'];
+function cycleEffortLevel(current: EffortLevel, direction: 'left' | 'right', supportedLevels: EffortLevel[]): EffortLevel {
+  const levels: EffortLevel[] = supportedLevels.length > 0 ? supportedLevels : ['low', 'medium', 'high'];
   // If the current level isn't in the cycle (e.g. 'max' after switching to a
   // non-Opus model), clamp to 'high'.
   const idx = levels.indexOf(current);
@@ -439,6 +440,13 @@ function cycleEffortLevel(current: EffortLevel, direction: 'left' | 'right', inc
   } else {
     return levels[(currentIndex - 1 + levels.length) % levels.length]!;
   }
+}
+function normalizeEffortLevelForModel(model: string | undefined, effort: EffortLevel | undefined): EffortLevel | undefined {
+  if (effort === undefined) return undefined;
+  if (!model) return effort;
+  const supportedLevels = getSupportedEffortLevels(model);
+  if (supportedLevels.length === 0) return undefined;
+  return supportedLevels.includes(effort) ? effort : 'high';
 }
 function getDefaultEffortLevelForOption(value?: string): EffortLevel {
   const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel();

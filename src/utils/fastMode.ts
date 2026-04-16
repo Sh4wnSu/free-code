@@ -15,6 +15,7 @@ import {
   getClaudeAIOAuthTokens,
   handleOAuth401Error,
   hasProfileScope,
+  isClaudeAISubscriber,
 } from './auth.js'
 import { isInBundledMode } from './bundledMode.js'
 import { getGlobalConfig, saveGlobalConfig } from './config.js'
@@ -22,11 +23,13 @@ import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import {
   getDefaultMainLoopModelSetting,
+  isGPTModel,
   isOpus1mMergeEnabled,
+  renderModelName,
   type ModelSetting,
   parseUserSpecifiedModel,
 } from './model/model.js'
-import { getAPIProvider } from './model/providers.js'
+import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { isEssentialTrafficOnly } from './privacyLevel.js'
 import {
   getInitialSettings,
@@ -37,6 +40,49 @@ import { createSignal } from './signal.js'
 
 export function isFastModeEnabled(): boolean {
   return !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FAST_MODE)
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  )
+}
+
+export function isProxyFastModeEnabled(): boolean {
+  if (getAPIProvider() !== 'firstParty') {
+    return false
+  }
+  if (isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FAST_MODE_PROXY)) {
+    return true
+  }
+  if (isFirstPartyAnthropicBaseUrl()) {
+    return false
+  }
+  const baseUrl = process.env.ANTHROPIC_BASE_URL
+  if (!baseUrl) {
+    return false
+  }
+  try {
+    return isLoopbackHost(new URL(baseUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+export function isFastModeCommandAvailable(): boolean {
+  if (!isFastModeEnabled()) {
+    return false
+  }
+  if (isClaudeAISubscriber()) {
+    return true
+  }
+  if (getAPIProvider() !== 'firstParty') {
+    return false
+  }
+  return isFirstPartyAnthropicBaseUrl() || isProxyFastModeEnabled()
 }
 
 export function isFastModeAvailable(): boolean {
@@ -93,6 +139,10 @@ export function getFastModeUnavailableReason(): string | null {
     return 'Fast mode requires the native binary · Install from: https://claude.com/product/claude-code'
   }
 
+  if (isProxyFastModeEnabled()) {
+    return null
+  }
+
   // Not available in the SDK unless explicitly opted in via --settings.
   // Assistant daemon mode is exempt — it's first-party orchestration, and
   // kairosActive is set before this check runs (main.tsx:~1626 vs ~3249).
@@ -142,7 +192,27 @@ export function getFastModeUnavailableReason(): string | null {
 // @[MODEL LAUNCH]: Update supported Fast Mode models.
 export const FAST_MODE_MODEL_DISPLAY = 'Opus 4.6'
 
-export function getFastModeModel(): string {
+function normalizeProxyFastModeModel(modelSetting?: ModelSetting): string {
+  const resolvedModel = parseUserSpecifiedModel(
+    modelSetting ?? getDefaultMainLoopModelSetting(),
+  )
+  if (isGPTModel(resolvedModel)) {
+    return resolvedModel.replace(/-1m$/i, '')
+  }
+  return 'gpt-5.4'
+}
+
+export function getFastModeModelDisplay(modelSetting?: ModelSetting): string {
+  if (isProxyFastModeEnabled()) {
+    return renderModelName(normalizeProxyFastModeModel(modelSetting))
+  }
+  return FAST_MODE_MODEL_DISPLAY
+}
+
+export function getFastModeModel(modelSetting?: ModelSetting): string {
+  if (isProxyFastModeEnabled()) {
+    return normalizeProxyFastModeModel(modelSetting)
+  }
   return 'opus' + (isOpus1mMergeEnabled() ? '[1m]' : '')
 }
 
@@ -172,6 +242,9 @@ export function isFastModeSupportedByModel(
   }
   const model = modelSetting ?? getDefaultMainLoopModelSetting()
   const parsedModel = parseUserSpecifiedModel(model)
+  if (isProxyFastModeEnabled()) {
+    return isGPTModel(parsedModel)
+  }
   return parsedModel.toLowerCase().includes('opus-4-6')
 }
 
@@ -393,6 +466,10 @@ export function resolveFastModeStatusFromCache(): void {
   if (!isFastModeEnabled()) {
     return
   }
+  if (isProxyFastModeEnabled()) {
+    orgStatus = { status: 'enabled' }
+    return
+  }
   if (orgStatus.status !== 'pending') {
     return
   }
@@ -411,6 +488,11 @@ export async function prefetchFastModeStatus(): Promise<void> {
   }
 
   if (!isFastModeEnabled()) {
+    return
+  }
+
+  if (isProxyFastModeEnabled()) {
+    orgStatus = { status: 'enabled' }
     return
   }
 

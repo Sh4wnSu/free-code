@@ -1,4 +1,5 @@
 import {
+  EFFORT_EXTRA_HIGH,
   EFFORT_HIGH,
   EFFORT_LOW,
   EFFORT_MAX,
@@ -32,6 +33,8 @@ export function effortLevelToSymbol(level: EffortLevel): string {
       return EFFORT_MEDIUM
     case 'high':
       return EFFORT_HIGH
+    case 'extra-high':
+      return EFFORT_EXTRA_HIGH
     case 'max':
       return EFFORT_MAX
     default:

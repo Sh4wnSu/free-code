@@ -23,11 +23,16 @@ import {
   getDefaultOpusModel,
   getDefaultHaikuModel,
   getDefaultMainLoopModelSetting,
+  getModelPickerFamily,
   getMarketingNameForModel,
   getUserSpecifiedModelSetting,
   isOpus1mMergeEnabled,
+  isGPTModel,
   getOpus46PricingSuffix,
+  parseUserSpecifiedModel,
+  renderModelName,
   renderDefaultModelSetting,
+  type ModelPickerFamily,
   type ModelSetting,
 } from './model.js'
 import { has1mContext } from '../context.js'
@@ -41,6 +46,8 @@ export type ModelOption = {
   description: string
   descriptionForModel?: string
 }
+
+const DEFAULT_GPT_PICKER_MODEL = 'gpt-5.4'
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
   if (process.env.USER_TYPE === 'ant') {
@@ -71,6 +78,63 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
     label: 'Default (recommended)',
     description: `Use the default model (currently ${renderDefaultModelSetting(getDefaultMainLoopModelSetting())})${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
   }
+}
+
+function getConfiguredDefaultGptModel(): string {
+  const initialModel = getInitialMainLoopModel()
+  if (initialModel !== null && getModelPickerFamily(initialModel) === 'gpt') {
+    return parseUserSpecifiedModel(initialModel)
+  }
+  return DEFAULT_GPT_PICKER_MODEL
+}
+
+function getDefaultGptOption(): ModelOption {
+  const currentModel = renderModelName(getConfiguredDefaultGptModel())
+  return {
+    value: null,
+    label: 'Default (recommended)',
+    description: `Use the configured GPT default (currently ${currentModel})`,
+    descriptionForModel: `Default model (currently ${currentModel})`,
+  }
+}
+
+function getGpt54Option(): ModelOption {
+  return {
+    value: 'gpt-5.4',
+    label: 'GPT-5.4',
+    description: 'Balanced default for most coding tasks',
+    descriptionForModel:
+      'GPT-5.4 - balanced default for most coding tasks',
+  }
+}
+
+function getGpt54_1MOption(): ModelOption {
+  return {
+    value: 'gpt-5.4-1m',
+    label: 'GPT-5.4 (1M context)',
+    description: 'GPT-5.4 for long sessions and large codebases',
+    descriptionForModel:
+      'GPT-5.4 with 1M context window - for long sessions with large codebases',
+  }
+}
+
+function getGpt53CodexOption(): ModelOption {
+  return {
+    value: 'gpt-5.3-codex',
+    label: 'GPT-5.3 Codex',
+    description: 'Faster for quick edits and lightweight agent loops',
+    descriptionForModel:
+      'GPT-5.3 Codex - faster for quick edits and lightweight agent loops',
+  }
+}
+
+function getGptModelOptionsBase(): ModelOption[] {
+  return [
+    getDefaultGptOption(),
+    getGpt54Option(),
+    getGpt54_1MOption(),
+    getGpt53CodexOption(),
+  ]
 }
 
 function getCustomSonnetOption(): ModelOption | undefined {
@@ -268,7 +332,14 @@ function getOpusPlanOption(): ModelOption {
 
 // @[MODEL LAUNCH]: Update the model picker lists below to include/reorder options for the new model.
 // Each user tier (ant, Max/Team Premium, Pro/Team Standard/Enterprise, PAYG 1P, PAYG 3P) has its own list.
-function getModelOptionsBase(fastMode = false): ModelOption[] {
+function getModelOptionsBase(
+  fastMode = false,
+  family: ModelPickerFamily = 'claude',
+): ModelOption[] {
+  if (family === 'gpt') {
+    return getGptModelOptionsBase()
+  }
+
   if (process.env.USER_TYPE === 'ant') {
     // Build options from antModels config
     const antModelOptions: ModelOption[] = getAntModels().map(m => ({
@@ -429,6 +500,15 @@ function getModelFamilyInfo(
  * Returns null if the model is not recognized.
  */
 function getKnownModelOption(model: string): ModelOption | null {
+  if (isGPTModel(model)) {
+    const label = renderModelName(model)
+    return {
+      value: model,
+      label,
+      description: model,
+    }
+  }
+
   const marketingName = getMarketingNameForModel(model)
   if (!marketingName) return null
 
@@ -458,8 +538,14 @@ function getKnownModelOption(model: string): ModelOption | null {
   }
 }
 
-export function getModelOptions(fastMode = false): ModelOption[] {
-  const options = getModelOptionsBase(fastMode)
+export function getModelOptions(
+  fastMode = false,
+  currentModel?: ModelSetting,
+): ModelOption[] {
+  const options = getModelOptionsBase(
+    fastMode,
+    getModelPickerFamily(currentModel),
+  )
 
   // Add the custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var
   const envCustomModel = process.env.ANTHROPIC_CUSTOM_MODEL_OPTION

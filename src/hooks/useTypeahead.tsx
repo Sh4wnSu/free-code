@@ -8,6 +8,7 @@ import { type Command, getCommandName } from '../commands.js';
 import { getModeFromInput, getValueFromInput } from '../components/PromptInput/inputModes.js';
 import type { SuggestionItem, SuggestionType } from '../components/PromptInput/PromptInputFooterSuggestions.js';
 import { useIsModalOverlayActive, useRegisterOverlay } from '../context/overlayContext.js';
+import { useMainLoopModel } from '../hooks/useMainLoopModel.js';
 import { KeyboardEvent } from '../ink/events/keyboard-event.js';
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until consumers wire handleKeyDown to <Box onKeyDown>
 import { useInput } from '../ink.js';
@@ -26,6 +27,7 @@ import { applyCommandSuggestion, findMidInputSlashCommand, generateCommandSugges
 import { getDirectoryCompletions, getPathCompletions, isPathLikeToken } from '../utils/suggestions/directoryCompletion.js';
 import { getShellHistoryCompletion } from '../utils/suggestions/shellHistoryCompletion.js';
 import { getSlackChannelSuggestions, hasSlackMcpServer } from '../utils/suggestions/slackChannelSuggestions.js';
+import { getEffortLevelDescription, getSupportedEffortLevels } from '../utils/effort.js';
 import { TEAM_LEAD_NAME } from '../utils/swarm/constants.js';
 import { applyFileSuggestion, findLongestCommonPrefix, onIndexBuildComplete, startBackgroundCacheRefresh } from './fileSuggestions.js';
 import { generateUnifiedSuggestions } from './unifiedSuggestions.js';
@@ -346,6 +348,23 @@ function hasCommandWithArguments(isAtEndWithWhitespace: boolean, value: string) 
   // (but preserve the arguments).
   return !isAtEndWithWhitespace && value.includes(' ') && !value.endsWith(' ');
 }
+function isEffortCommandInput(value: string) {
+  return extractCommandNameAndArgs(value)?.commandName === 'effort';
+}
+function buildEffortArgumentSuggestions(model: string, rawArgs: string): SuggestionItem[] {
+  const query = rawArgs.trim().toLowerCase();
+  const levels = [...getSupportedEffortLevels(model), 'auto'] as const;
+  return levels.filter(level => query === '' || level.startsWith(query)).map(level => ({
+    id: `effort-argument-${level}`,
+    displayText: `/effort ${level}`,
+    description: level === 'auto' ? 'Use the default effort level for your model' : getEffortLevelDescription(level),
+    metadata: {
+      kind: 'command-argument',
+      replacementInput: `/effort ${level} `,
+      submitInput: `/effort ${level}`
+    }
+  }));
+}
 
 /**
  * Hook for handling typeahead functionality for both commands and file paths
@@ -372,6 +391,7 @@ export function useTypeahead({
   const {
     addNotification
   } = useNotifications();
+  const mainLoopModel = useMainLoopModel();
   const thinkingToggleShortcut = useShortcutDisplay('chat:thinkingToggle', 'Chat', 'alt+t');
   const [suggestionType, setSuggestionType] = useState<SuggestionType>('none');
 
@@ -727,7 +747,7 @@ export function useTypeahead({
     }
 
     // Determine whether to display the argument hint and command suggestions.
-    if (mode === 'prompt' && isCommandInput(value) && effectiveCursorOffset > 0 && !hasCommandWithArguments(isAtEndWithWhitespace, value)) {
+    if (mode === 'prompt' && isCommandInput(value) && effectiveCursorOffset > 0 && (!hasCommandWithArguments(isAtEndWithWhitespace, value) || isEffortCommandInput(value))) {
       let commandArgumentHint: string | undefined = undefined;
       if (value.length > 1) {
         // We have a partial or complete command without arguments
@@ -747,6 +767,7 @@ export function useTypeahead({
         // This prevents Enter from selecting a different command after Tab completion
         if (spaceIndex !== -1) {
           const exactMatch = commands.find(cmd => getCommandName(cmd) === commandName);
+          const effortSuggestions = exactMatch && commandName === 'effort' ? buildEffortArgumentSuggestions(mainLoopModel, value.slice(spaceIndex + 1)) : [];
           if (exactMatch || hasRealArguments) {
             // Priority 1: Static argumentHint (only on first trailing space for backwards compat)
             if (exactMatch?.argumentHint && hasExactlyOneTrailingSpace) {
@@ -757,6 +778,16 @@ export function useTypeahead({
               const argsText = value.slice(spaceIndex + 1);
               const typedArgs = parseArguments(argsText);
               commandArgumentHint = generateProgressiveArgumentHint(exactMatch.argNames, typedArgs);
+            }
+            if (commandName === 'effort') {
+              setSuggestionsState(() => ({
+                commandArgumentHint,
+                suggestions: effortSuggestions,
+                selectedSuggestion: effortSuggestions.length > 0 ? 0 : -1
+              }));
+              setSuggestionType(effortSuggestions.length > 0 ? 'command' : 'none');
+              setMaxColumnWidth(undefined);
+              return;
             }
             setSuggestionsState(() => ({
               commandArgumentHint,
@@ -773,16 +804,18 @@ export function useTypeahead({
         // (set above when hasExactlyOneTrailingSpace is true)
       }
       const commandItems = generateCommandSuggestions(value, commands);
+      const effortCommandSuggestions = value === '/effort' ? buildEffortArgumentSuggestions(mainLoopModel, '') : [];
+      const combinedCommandItems = effortCommandSuggestions.length > 0 ? [...commandItems, ...effortCommandSuggestions] : commandItems;
       setSuggestionsState(() => ({
         commandArgumentHint,
-        suggestions: commandItems,
-        selectedSuggestion: commandItems.length > 0 ? 0 : -1
+        suggestions: combinedCommandItems,
+        selectedSuggestion: combinedCommandItems.length > 0 ? 0 : -1
       }));
-      setSuggestionType(commandItems.length > 0 ? 'command' : 'none');
+      setSuggestionType(combinedCommandItems.length > 0 ? 'command' : 'none');
 
       // Use stable width from all commands (prevents layout shift when filtering)
-      if (commandItems.length > 0) {
-        setMaxColumnWidth(allCommandsMaxWidth);
+      if (combinedCommandItems.length > 0) {
+        setMaxColumnWidth(value === '/effort' ? undefined : allCommandsMaxWidth);
       }
       return;
     }
@@ -792,7 +825,7 @@ export function useTypeahead({
       // because there may be relevant @ symbol and file suggestions.
       debouncedFetchFileSuggestions.cancel();
       clearSuggestions();
-    } else if (isCommandInput(value) && hasCommandWithArguments(isAtEndWithWhitespace, value)) {
+    } else if (isCommandInput(value) && hasCommandWithArguments(isAtEndWithWhitespace, value) && !isEffortCommandInput(value)) {
       // If we have a command with arguments (no trailing space), clear any stale hint
       // This prevents the hint from flashing when transitioning between states
       setSuggestionsState(prev => prev.commandArgumentHint ? {
@@ -884,7 +917,7 @@ export function useTypeahead({
   }, [suggestionType, commands, setSuggestionsState, clearSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels, mode, suppressSuggestions,
   // Note: using suggestionsRef instead of suggestions to avoid recreating
   // this callback when only selectedSuggestion changes (not the suggestions list)
-  allCommandsMaxWidth]);
+  allCommandsMaxWidth, mainLoopModel]);
 
   // Update suggestions when input changes
   // Note: We intentionally don't depend on cursorOffset here - cursor movement alone

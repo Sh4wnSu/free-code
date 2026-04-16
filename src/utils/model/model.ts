@@ -5,7 +5,10 @@
  * literals with process.env.USER_TYPE === 'ant' for Bun to remove the codenames
  * during dead code elimination
  */
-import { getMainLoopModelOverride } from '../../bootstrap/state.js'
+import {
+  getInitialMainLoopModel,
+  getMainLoopModelOverride,
+} from '../../bootstrap/state.js'
 import {
   getSubscriptionType,
   isClaudeAISubscriber,
@@ -32,6 +35,7 @@ import { capitalize } from '../stringUtils.js'
 export type ModelShortName = string
 export type ModelName = string
 export type ModelSetting = ModelName | ModelAlias | null
+export type ModelPickerFamily = 'claude' | 'gpt'
 
 export function getSmallFastModel(): ModelName {
   return process.env.ANTHROPIC_SMALL_FAST_MODEL || getDefaultHaikuModel()
@@ -341,12 +345,71 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
   return renderModelName(setting)
 }
 
+export function isGPTModel(model: string): boolean {
+  return /^gpt-/i.test(model.trim())
+}
+
+function getGPTModelDisplayName(model: ModelName): string | null {
+  const trimmedModel = model.trim()
+  const match = trimmedModel.match(/^gpt-(\d+(?:\.\d+)?)(?:-(.+))?$/i)
+  if (!match) {
+    return null
+  }
+
+  const [, version, rawSuffix] = match
+  if (!rawSuffix) {
+    return `GPT-${version}`
+  }
+
+  const suffix = rawSuffix.toLowerCase()
+  if (suffix === '1m') {
+    return `GPT-${version} (1M context)`
+  }
+  if (suffix === 'codex') {
+    return `GPT-${version} Codex`
+  }
+
+  const formattedSuffix = rawSuffix
+    .split('-')
+    .map(part => (part.toLowerCase() === '1m' ? '1M' : capitalize(part)))
+    .join(' ')
+  return `GPT-${version} ${formattedSuffix}`
+}
+
+function getModelPickerFamilyFromSetting(
+  model: ModelSetting | undefined,
+): ModelPickerFamily | null {
+  if (model === undefined || model === null) {
+    return null
+  }
+
+  const resolvedModel = parseUserSpecifiedModel(model)
+  return isGPTModel(resolvedModel) ? 'gpt' : 'claude'
+}
+
+export function getModelPickerFamily(
+  model?: ModelSetting,
+): ModelPickerFamily {
+  return (
+    getModelPickerFamilyFromSetting(model) ??
+    getModelPickerFamilyFromSetting(getUserSpecifiedModelSetting()) ??
+    getModelPickerFamilyFromSetting(getInitialMainLoopModel()) ??
+    getModelPickerFamilyFromSetting(getDefaultMainLoopModelSetting()) ??
+    'claude'
+  )
+}
+
 // @[MODEL LAUNCH]: Add display name cases for the new model (base + [1m] variant if applicable).
 /**
  * Returns a human-readable display name for known public models, or null
  * if the model is not recognized as a public model.
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
+  const gptDisplayName = getGPTModelDisplayName(model)
+  if (gptDisplayName) {
+    return gptDisplayName
+  }
+
   switch (model) {
     case getModelStrings().opus46:
       return 'Opus 4.6'
@@ -396,6 +459,10 @@ export function renderModelName(model: ModelName): string {
   const publicName = getPublicModelDisplayName(model)
   if (publicName) {
     return publicName
+  }
+  const marketingName = getMarketingNameForModel(model)
+  if (marketingName) {
+    return marketingName
   }
   if (process.env.USER_TYPE === 'ant') {
     const resolved = parseUserSpecifiedModel(model)
@@ -555,6 +622,10 @@ export function isLegacyModelRemapEnabled(): boolean {
 
 export function modelDisplayString(model: ModelSetting): string {
   if (model === null) {
+    const configuredModel = getInitialMainLoopModel()
+    if (configuredModel !== null) {
+      return `Default (${renderModelName(parseUserSpecifiedModel(configuredModel))})`
+    }
     if (process.env.USER_TYPE === 'ant') {
       return `Default for Ants (${renderDefaultModelSetting(getDefaultMainLoopModelSetting())})`
     } else if (isClaudeAISubscriber()) {
@@ -563,7 +634,10 @@ export function modelDisplayString(model: ModelSetting): string {
     return `Default (${getDefaultMainLoopModel()})`
   }
   const resolvedModel = parseUserSpecifiedModel(model)
-  return model === resolvedModel ? resolvedModel : `${model} (${resolvedModel})`
+  const renderedResolvedModel = renderModelName(resolvedModel)
+  return model === resolvedModel
+    ? renderedResolvedModel
+    : `${model} (${renderedResolvedModel})`
 }
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
@@ -571,6 +645,11 @@ export function getMarketingNameForModel(modelId: string): string | undefined {
   if (getAPIProvider() === 'foundry') {
     // deployment ID is user-defined in Foundry, so it may have no relation to the actual model
     return undefined
+  }
+
+  const gptDisplayName = getGPTModelDisplayName(modelId)
+  if (gptDisplayName) {
+    return gptDisplayName
   }
 
   const has1m = modelId.toLowerCase().includes('[1m]')

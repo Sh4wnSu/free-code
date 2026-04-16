@@ -1,4 +1,5 @@
 import { feature } from 'bun:bundle'
+import { getSessionId } from '../bootstrap/state.js'
 import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
 import { isExtractModeActive } from '../memdir/paths.js'
 import {
@@ -35,8 +36,9 @@ import {
   createUserMessage,
 } from '../utils/messages.js'
 import type { SystemPrompt } from '../utils/systemPromptType.js'
-import { getTaskListId, listTasks } from '../utils/tasks.js'
+import { getTaskListId, isTodoV2Enabled, listTasks } from '../utils/tasks.js'
 import { getAgentName, getTeamName, isTeammate } from '../utils/teammate.js'
+import { getTaskFinalizationReminderContent } from './taskFinalization.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const extractMemoriesModule = feature('EXTRACT_MEMORIES')
@@ -56,6 +58,7 @@ import {
   createCacheSafeParams,
   saveCacheSafeParams,
 } from '../utils/forkedAgent.js'
+import { getTodoFinalizationReminderContent } from './todoFinalization.js'
 
 type StopHookResult = {
   blockingErrors: Message[]
@@ -448,6 +451,47 @@ export async function* handleStopHooks(
         return {
           blockingErrors: teammateBlockingErrors,
           preventContinuation: false,
+        }
+      }
+    }
+
+    if (!toolUseContext.agentId && !isTeammate()) {
+      const allMessages = [...messagesForQuery, ...assistantMessages]
+
+      if (isTodoV2Enabled()) {
+        const taskFinalizationReminder = getTaskFinalizationReminderContent(
+          await listTasks(getTaskListId()),
+          allMessages,
+          getAgentName(),
+        )
+
+        if (taskFinalizationReminder) {
+          const reminderMessage = createUserMessage({
+            content: taskFinalizationReminder,
+            isMeta: true,
+          })
+          yield reminderMessage
+          return {
+            blockingErrors: [reminderMessage],
+            preventContinuation: false,
+          }
+        }
+      } else {
+        const todoFinalizationReminder = getTodoFinalizationReminderContent(
+          toolUseContext.getAppState().todos[getSessionId()] ?? [],
+          allMessages,
+        )
+
+        if (todoFinalizationReminder) {
+          const reminderMessage = createUserMessage({
+            content: todoFinalizationReminder,
+            isMeta: true,
+          })
+          yield reminderMessage
+          return {
+            blockingErrors: [reminderMessage],
+            preventContinuation: false,
+          }
         }
       }
     }

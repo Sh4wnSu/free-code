@@ -176,6 +176,28 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ./cli --model claude-sonnet-4-6-20250514
 ```
 
+### Using GPT models through an Anthropic-compatible proxy
+
+This fork has also been adapted to work cleanly with Anthropic-compatible local gateways such as `codex2gpt`, where the upstream model behind the Anthropic surface is actually GPT.
+
+Typical local setup:
+
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:18100"
+export ANTHROPIC_API_KEY="dummy"
+./cli-dev --model gpt-5.4
+```
+
+In that mode:
+
+- `/model` is family-aware. GPT sessions show GPT model choices such as `GPT-5.4`, `GPT-5.4 (1M context)`, and `GPT-5.3 Codex`; Claude sessions keep showing Claude models
+- `/effort` opens a standalone picker, similar to `/model`
+- on `gpt-5.4` and `gpt-5.4-1m`, `/effort` offers `low`, `medium`, `high`, `extra-high`, and `auto`
+- `/fast` is available when the configured Anthropic-compatible backend supports fast mode; with `codex2gpt` it maps to `speed: "fast"` and prefers the non-1M GPT route
+- the status line and picker labels use friendly GPT names instead of forcing Claude-family labels for GPT-backed sessions
+
+If your proxy normalizes Anthropic effort values for OpenAI Responses-compatible backends, `extra-high` can be carried across cleanly as the upstream `xhigh` tier.
+
 ---
 
 ## Project structure

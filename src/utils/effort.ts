@@ -14,6 +14,7 @@ export const EFFORT_LEVELS = [
   'low',
   'medium',
   'high',
+  'extra-high',
   'max',
 ] as const satisfies readonly EffortLevel[]
 
@@ -64,6 +65,27 @@ export function modelSupportsMaxEffort(model: string): boolean {
   return false
 }
 
+export function modelSupportsExtraHighEffort(model: string): boolean {
+  const m = model.toLowerCase()
+  if (m === 'gpt-5.4' || m === 'gpt-5.4-1m') {
+    return true
+  }
+  return false
+}
+
+export function getSupportedEffortLevels(model: string): EffortLevel[] {
+  if (!modelSupportsEffort(model)) {
+    return []
+  }
+  if (modelSupportsMaxEffort(model)) {
+    return ['low', 'medium', 'high', 'max']
+  }
+  if (modelSupportsExtraHighEffort(model)) {
+    return ['low', 'medium', 'high', 'extra-high']
+  }
+  return ['low', 'medium', 'high']
+}
+
 export function isEffortLevel(value: string): value is EffortLevel {
   return (EFFORT_LEVELS as readonly string[]).includes(value)
 }
@@ -95,7 +117,12 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
 export function toPersistableEffort(
   value: EffortValue | undefined,
 ): EffortLevel | undefined {
-  if (value === 'low' || value === 'medium' || value === 'high') {
+  if (
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'extra-high'
+  ) {
     return value
   }
   if (value === 'max' && process.env.USER_TYPE === 'ant') {
@@ -159,6 +186,9 @@ export function resolveAppliedEffort(
   }
   const resolved =
     envOverride ?? appStateEffortValue ?? getDefaultEffortForModel(model)
+  if (resolved === 'extra-high' && !modelSupportsExtraHighEffort(model)) {
+    return 'high'
+  }
   // API rejects 'max' on non-Opus-4.6 models — downgrade to 'high'.
   if (resolved === 'max' && !modelSupportsMaxEffort(model)) {
     return 'high'
@@ -229,6 +259,8 @@ export function getEffortLevelDescription(level: EffortLevel): string {
       return 'Balanced approach with standard implementation and testing'
     case 'high':
       return 'Comprehensive implementation with extensive testing and documentation'
+    case 'extra-high':
+      return 'Deepest GPT-5.4 reasoning mode with the highest latency and cost'
     case 'max':
       return 'Maximum capability with deepest reasoning (Opus 4.6 only)'
   }

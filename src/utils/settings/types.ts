@@ -703,8 +703,8 @@ export const SettingsSchema = lazySchema(() =>
       effortLevel: z
         .enum(
           process.env.USER_TYPE === 'ant'
-            ? ['low', 'medium', 'high', 'max']
-            : ['low', 'medium', 'high'],
+            ? ['low', 'medium', 'high', 'extra-high', 'max']
+            : ['low', 'medium', 'high', 'extra-high'],
         )
         .optional()
         .catch(undefined)
